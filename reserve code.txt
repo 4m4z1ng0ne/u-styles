@@ -1,0 +1,78 @@
+forms.py
+
+from django import forms
+
+from orders.models import Order
+
+
+class OrderForm(forms.ModelForm):
+    first_name = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ivan'}))
+    last_name = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ivanov'}))
+    email = forms.EmailField(widget=forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'you@example.com'}))
+    address = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Russia'}))
+
+    class Meta:
+        model = Order
+        fields = ('first_name', 'last_name', 'email', 'address')
+
+
+
+views.py
+
+from django.views.generic.edit import CreateView
+from django.urls import reverse_lazy
+from django.views.generic.list import ListView
+from common.views import TitleMixin
+from orders.forms import OrderForm
+from orders.models import Order, OrderItem
+from django.shortcuts import render, redirect
+from django.views.generic.detail import DetailView
+from products.models import Basket
+
+
+class OrderListView(TitleMixin, ListView):
+    template_name = 'orders/orders.html'
+    title = 'U-STYLE Orders'
+    queryset = Order.objects.all()
+
+    def get_queryset(self):
+        queryset = super(OrderListView, self).get_queryset()
+        return queryset.filter(initiator=self.request.user)
+
+
+class OrderCreateVIew(TitleMixin, CreateView):
+    template_name = 'orders/order-create.html'
+    form_class = OrderForm
+    success_url = reverse_lazy('orders:orders_list')  # Изменено
+    title = 'Order making'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['user'] = self.request.user  # Добавляем пользователя в контекст
+        return context
+
+    def form_valid(self, form):
+        form.instance.initiator = self.request.user
+        order = form.save()  # Сохраняем заказ
+        basket = Basket.objects.filter(user=self.request.user)
+        for item in basket:
+            OrderItem.objects.create(  # Создаем объекты OrderItem
+                order=order,
+                product_name=item.product.name,
+                quantity=item.quantity,
+                price=item.product.price,
+                sum=item.sum()  # Вызываем метод sum()
+            )
+        basket.delete()  # Очищаем корзину
+        return redirect('orders:orders_list')  # Изменено
+
+
+class OrderDetailView(DetailView):
+    model = Order
+    template_name = 'orders/order.html' # или другой подходящий шаблон
+    context_object_name = 'order'  # имя объекта в контексте шаблона
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        print(context)
+        return context
